@@ -23,12 +23,12 @@ public class DocumentIndexerClient {
 
     public static void main(String[] args) {
         DocumentIndexerClient client = new DocumentIndexerClient();
-        client.start();
+        client.start(Integer.parseInt(args[0]));
     }
 
-    public void start() {
+    public void start(int id) {
         String host = "127.0.0.1";
-        int port = Config.DIServerPort + 1;
+        int port = Config.DIServerPort + id;
 
         Bootstrap bootstrap = new Bootstrap();
         EventLoopGroup group = new NioEventLoopGroup();
@@ -50,6 +50,8 @@ public class DocumentIndexerClient {
         try {
             ChannelFuture channelFuture = bootstrap.connect(host, port).sync();
             Channel ch = channelFuture.sync().channel();
+
+            ch.writeAndFlush("leader\n");
 
             int lines = 10;
 

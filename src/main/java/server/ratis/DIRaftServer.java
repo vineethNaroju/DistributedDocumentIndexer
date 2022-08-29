@@ -4,6 +4,10 @@ import common.Config;
 import org.apache.ratis.conf.RaftProperties;
 import org.apache.ratis.grpc.GrpcConfigKeys;
 import org.apache.ratis.protocol.*;
+import org.apache.ratis.protocol.exceptions.LeaderNotReadyException;
+import org.apache.ratis.protocol.exceptions.NotLeaderException;
+import org.apache.ratis.protocol.exceptions.RaftException;
+import org.apache.ratis.protocol.exceptions.StateMachineException;
 import org.apache.ratis.server.RaftServer;
 import org.apache.ratis.server.RaftServerConfigKeys;
 import org.apache.ratis.util.NetUtils;
@@ -72,17 +76,36 @@ public class DIRaftServer implements Closeable {
         return raftServer.getLifeCycleState().toString();
     }
 
-    //TODO
-    public void insertDocument(String document) throws IOException {
-
-        if (isLeaderAndReady()) {
-
-        }
+    public static void print(Object o) {
+        System.out.println(new Date() + "|" + o);
     }
 
-    //TODO
-    public int getFrequency(String word) {
-        return -1;
+    public String insertDocument(String document) {
+
+        if (isLeaderAndReady()) {
+            RaftClientRequest req = createWriteRequest(document);
+            RaftClientReply reply;
+
+            try {
+                reply = raftServer.submitClientRequestAsync(req).get();
+            } catch (Exception e) {
+                e.printStackTrace();
+                return e.toString();
+            }
+
+            if(reply == null) {
+                print("Got empty reply for req:" + req);
+                return "empty reply from raft server";
+            }
+
+            return handleReply(reply);
+        }
+
+        return "current raft server is not leader or not ready yet";
+    }
+
+    public int getSingleWordFrequency(String word) {
+        return metadata.getSingleWordFrequency(word);
     }
 
     public boolean isLeaderAndReady() {
@@ -93,5 +116,47 @@ public class DIRaftServer implements Closeable {
             ioe.printStackTrace();
         }
         return false;
+    }
+
+    private RaftClientRequest createWriteRequest(String document) {
+        return RaftClientRequest.newBuilder()
+                .setMessage(Message.valueOf(document))
+                .setType(RaftClientRequest.writeRequestType())
+                .setGroupId(raftGroup.getGroupId())
+                .setServerId(raftServer.getId())
+                .setClientId(ClientId.randomId())
+                .build();
+    }
+
+    public String handleReply(RaftClientReply reply) {
+        if(reply.isSuccess()) {
+            return "success";
+        }
+
+        NotLeaderException notLeaderException = reply.getNotLeaderException();
+
+        if(notLeaderException != null) {
+            return notLeaderException.toString();
+        }
+
+        LeaderNotReadyException leaderNotReadyException = reply.getLeaderNotReadyException();
+
+        if(leaderNotReadyException != null) {
+            return leaderNotReadyException.toString();
+        }
+
+        StateMachineException stateMachineException = reply.getStateMachineException();
+
+        if(stateMachineException != null) {
+            return stateMachineException.toString();
+        }
+
+        RaftException raftException =  reply.getException();
+
+        if(raftException != null) {
+            return raftException.toString();
+        }
+
+        return reply.toString();
     }
 }

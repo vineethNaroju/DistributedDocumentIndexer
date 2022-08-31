@@ -1,0 +1,91 @@
+1. Verify if we can run dbServer, dbClient and a thread that invokes dbClient to make request to dbServer periodically -
+ in a single RM process - DONE
+2. Understand how we can dynamically join a raft cluster -
+    A. like increase size from 3 to 4 to 5 without changing config
+    B. Node ips is fixed for cluster, we are okay without join-cluster-api
+3. How to increase the term period, so that election doesn't happen too much ?
+4. Verify if we can tell Ratis that this server is leader now ? - TODO
+5. We use zk for leader election and store shared config - this uses extra machines or do they run in same node ?
+6. If we use Ratis along with zk then, both might choose different leaders for their clusters - which is bad, bad thing.
+7. In current architecture of 2 nodes (primary & secondary) - writes are accepted even if one of the node goes down
+BUT
+if we use ratis cluster of 3 nodes, if one node goes down, then writes won't be accepted (maybe some config) into
+dbServer, unless another node joins in.
+8. It means dbClient should try to async upload to dbServer with periodic retries and it should keep track of
+whatever stuff it has synced with dbServer ? - which defeats the purpose of dbServer itself ?
+9. How does the dbClient know from where it has to continue syncing with dbServer after establishing quorum.
+
+------------------
+
+1. RaftRMStateStore
+Backup file system as safety
+
+2. RMActiveServer is started by master
+- createAndInitActiveServices(), transitionToActive(), StandByTransitionRunnable
+- AdminService
+- ActiveStandByElectorBasedElectorService
+
+3. Learn to use Ratis leader election - so that we can use in code.
+
+4. submitClientRequestAsync - directly using server
+
+HDDS-858
+
+
+
+RMprocess - Active
+- RMstate map
+- RaftServer {
+    StateMachine {
+        Map -> is our RMstate.
+        applyTrx {
+            - this means that log entry is replicated already
+            - manually we have to apply entry on RMstate.
+        }
+    }
+}
+- updateAppState(appId, appState) {
+   RaftServer.submitClientRequest(appId, appState)
+}
+
+RMprocess - Standby
+
+ResourceManager.java -> line 153
+
+
+Use raft for leader election to understand candidate to leader transition
+
+CuratorBasedElectorService
+MemoryRMStateStoreService
+
+2-cluster, it won't accept write
+
+
+Raft1[1w,2w,3w], Raft2[1w,2w,3w]
+Raft1 dies
+Raft2[1w,2w,3w] - RMbacklog[4w, 5w]
+Raft1 rises up
+who reads from RMbacklog and then calls RaftServer.submitClientRequest([4w, 5w]) ?
+
+any case write fails -> store reqs into zkFs
+
+
+RMreq -> RaftPeer(req) -> zkWAL (need to chunk transactions into smaller ones)
+Pros: if active dies then standby will have latest state and don't need to read from zkWAL
+
+--------------------------------
+TODO
+* Recovery of raft peer in case of missing latest transaction ? WAL or edit logs or snapshots etc ?
+
+
+* RMactive but RaftServer can be any state but RaftServer.submitClientRequest should be replicated - without using
+client.
+- Follower node can't submit client request other wise it will get NotLeaderException.
+- Only the Leader node can do so and that request gets replicated.
+
+* Read Ozone code and compare WALs
+- I read and compared OM, OMRatisServer, OMStateMachine
+
+- our own distrbuted WAL with raft support
+
+I'm lost again - I should read Raft paper and compare with StateMachine Implementation.

@@ -1,0 +1,75 @@
+
+if the commit index of leader is way less than current index, then follower will have raft logs only until commit index
+of leader.
+
+Now if the leader goes down before the remaining log entries get replicated, then those commands are lost.
+
+timeline -
+n1:leader raftlog:[e1,e2,e3,e4,e5] | AppendEntries(e4) -> safely replicated -> apply to local state machine -> reply to client
+n2:follower raftlog:[e1,e2,e3]
+
+leader dies and AppendEntries for e4, e5 are lost - in worst case but previous leader has the entries in it's raftlog.
+what happens to write requests ?
+- The requests will get timed out -> [our stuff] -> leader election will happen -> follower will become leader.
+
+
+idea:
+1. leader can write a WAL to zk with it's wal_n1.log and follower can read this as soon as we get an event / notification that leader has died.
+2. Now all the followers have to read the file from zk (either follower knows the leader id or gets the config from zk) and applies the missing
+entries from wal_n1.log onto it's state machine (also call updateLastAppliedTermIndex()) or simulate that the entry is from leader.
+3. Once the follower finishes reading the missing transactions and append to their raftlog (appling to their state machine happens async) - they can
+change to candidate state and participate in election.
+4. Now one of the follower becomes leader and keeps a wal_n2.log in zk.
+5. If the downed server comes back as follower, it simply joins the cluster and leader will invoke notifyInstallSnapshotFromLeader onto the follower.
+
+Now the sequence of req is:
+
+[1].
+n1:candidate -> leader election -> update it's server status in zk.
+
+[2].
+req -> n1:leader [
+=> zk(wal_n1.log) STEP-A
+=> write req to raftlog(can we store this in zk with some appropriate name that any follower can recognize ?) STEP-B
+=> AppendEntries(followers) STEP-C
+=> majority appends STEP-D , here itself we can update the latest term,index in zk ?
+=> (signal followers & apply to local state machine) STEP-E
+] -> reply client. STEP-F
+
+[3]. Leader has died
+=> all followers gets an notification
+=> followers will read the missing transactions from info leader's wal(maybe from STEP-B itself) and append to their raftlog (need to figure out)
+=> they will now participate in leader election and follow [1].
+
+[4]. Both of them die and a new node is added to cluster with same config
+(what if the node doesn't have access to either of old node storage ? Then we don't have snapshot info and the recent changes, so we store snapshots in zk as well ?).
+=> load the snapshot into its memory.
+=> read the latest dead leader details of the groupId from zk.
+=> apply the wal of the above leader onto its state machine.
+
+in case of 2 nodes, then leader election, leader will perform the steps and follower will just replicate it. - what if they die again ? It's clean slate and repeat [4].
+
+what if both become alive() and have the same server ids - with access to snapshots ?
+=> they will individually load them into their memory
+=> conduct election
+=> leader will read the dead leader details of groupId from zk and apply the wal onto itself
+=> then leader will accept writes.
+
+This got complicated.
+
+Now somehow I've to make this into a poc and prove that in a long running cluster of 2 - the nodes can die be reborn as many times without much downtime (due to wal).
+
+
+Refer for new ideas to resolve problems:
+- RaftServer.getDivision(RaftGroupId).getInfo().[isFollower(),isLeader(),isCandidate(),isListener()]
+- Read StateMachine Interface class in source code to use all the available methods.
+
+
+Interesting Findings:
+- JvmPauseMonitor code, detectPause, GCInfo => sleeps for some duration fetches the GCInfo and compares the actual slept duration with closeThreshold,
+ stepdownThreshold => causes leader to step down and become follower.
+- RaftServerProxy implements RaftServer interface. RaftServer interface builder invokes ServerImplUtils.newRaftServer(peer,group,registry,properties,
+parameters) then creates a RaftServerProxy object, which is inited by ServerImplUtils to finally create RaftServerImpl object further down 4 function
+calls. Then in code we call RaftServer.start(-_-)
+-
+

@@ -108,6 +108,8 @@ public class DIRaftServer implements Closeable {
         return metadata.getSingleWordFrequency(word);
     }
 
+
+    // TODO: understand its purpose in handling write requests.
     public boolean isLeaderAndReady() {
         try {
             RaftServer.Division division = raftServer.getDivision(raftGroup.getGroupId());

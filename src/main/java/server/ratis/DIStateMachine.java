@@ -1,8 +1,7 @@
 package server.ratis;
 
 import org.apache.ratis.proto.RaftProtos;
-import org.apache.ratis.protocol.Message;
-import org.apache.ratis.protocol.RaftGroupId;
+import org.apache.ratis.protocol.*;
 import org.apache.ratis.server.RaftServer;
 import org.apache.ratis.server.protocol.TermIndex;
 import org.apache.ratis.server.raftlog.RaftLog;
@@ -21,10 +20,7 @@ import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.CompletableFuture;
 
 public class DIStateMachine extends BaseStateMachine {
@@ -128,4 +124,94 @@ public class DIStateMachine extends BaseStateMachine {
 
         return CompletableFuture.completedFuture(Message.valueOf("success"));
     }
+
+    // EXPLORING
+
+
+
+
+    //StateMachine
+    //Validate/pre-process the incoming update request in the state machine.
+    //Returns:
+    //the content to be written to the log entry. Null means the request should be rejected.
+    //Throws:
+    //IOException – thrown by the state machine while validation
+    @Override
+    public TransactionContext startTransaction(RaftClientRequest request) throws IOException {
+        return super.startTransaction(request);
+    }
+
+    //StateMachine
+    //This is called before the transaction passed from the StateMachine is appended to the raft log.
+    // This method will be called from log append and having the same strict serial order that the transactions will have in the RAFT log.
+    // Since this is called serially in the critical path of log append, it is important to do only required operations here.
+    //Returns: The Transaction context.
+    @Override
+    public TransactionContext preAppendTransaction(TransactionContext trx) throws IOException {
+        return super.preAppendTransaction(trx);
+    }
+
+    //StateMachine
+    //Called to notify the state machine that the Transaction passed cannot be appended (or synced).
+    // The exception field will indicate whether there was an exception or not.
+    //Params:
+    //trx – the transaction to cancel
+    //Returns:
+    //cancelled transaction
+    @Override
+    public TransactionContext cancelTransaction(TransactionContext trx) throws IOException {
+        return super.cancelTransaction(trx);
+    }
+
+    //EventApi
+    //Notify the StateMachine a term-index update event. This method will be invoked when a RaftProtos.
+    // MetadataProto or RaftProtos.RaftConfigurationProto is processed. For RaftProtos.StateMachineLogEntryProto, this method will not be invoked.
+    //Params:
+    //term – The term of the log entry index – The index of the log entry
+    @Override
+    public void notifyTermIndexUpdated(long term, long index) {
+        super.notifyTermIndexUpdated(term, index);
+    }
+
+    //EventApi
+    //Notify the StateMachine that a new leader has been elected. Note that the new leader can possibly be this server.
+    //Params:
+    //groupMemberId – The id of this server. newLeaderId – The id of the new leader
+    @Override
+    public void notifyLeaderChanged(RaftGroupMemberId groupMemberId, RaftPeerId newLeaderId) {
+        super.notifyLeaderChanged(groupMemberId, newLeaderId);
+    }
+
+    //LeaderEventApi - be invoked only when the server is a leader.
+    //Notify StateMachine that this server is no longer the leader.
+    @Override
+    public void notifyNotLeader(Collection<TransactionContext> pendingEntries) throws IOException {
+        super.notifyNotLeader(pendingEntries);
+    }
+
+    //FollowerEventApi - be invoked only when the server is a follower.
+    //Notify the StateMachine that there is no leader in the group for an extended period of time.
+    // This notification is based on "raft.server.notification.no-leader.timeout".
+    //Params:
+    //roleInfoProto – information about the current node role and rpc delay information
+    //See Also:
+    //org.apache.ratis.server.RaftServerConfigKeys.Notification.NO_LEADER_TIMEOUT_KEY
+    @Override
+    public void notifyExtendedNoLeader(RaftProtos.RoleInfoProto roleInfoProto) {
+        super.notifyExtendedNoLeader(roleInfoProto);
+    }
+
+    //FollowerEventApi - be invoked only when the server is a follower.
+    //Notify the StateMachine that the leader has purged entries from its log.
+    // In order to catch up, the StateMachine has to install the latest snapshot asynchronously.
+    //Params:
+    //roleInfoProto – information about the current node role and rpc delay information. firstTermIndexInLog – The term-index of the first append entry available in the leader's log.
+    //Returns:
+    //return the last term-index in the snapshot after the snapshot installation.
+    @Override
+    public CompletableFuture<TermIndex> notifyInstallSnapshotFromLeader(RaftProtos.RoleInfoProto roleInfoProto, TermIndex firstTermIndexInLog) {
+        return super.notifyInstallSnapshotFromLeader(roleInfoProto, firstTermIndexInLog);
+    }
+
+
 }

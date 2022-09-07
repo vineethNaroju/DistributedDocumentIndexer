@@ -89,3 +89,59 @@ client.
 - our own distrbuted WAL with raft support
 
 I'm lost again - I should read Raft paper and compare with StateMachine Implementation.
+
+----------------------------------------
+rm1 -> trxns in db, state store should be trxns, understand whether levelDB, zk , fs use trxn or key-value overwrite.
+rm2 -> read from db
+
+complete state + edit logs
+nn1 [cs] , editlogs = [create, delete]
+edit log entry
+{cs}, [am,new] -> [am,running]
+nn2 [cs],
+
+
+LEADER [e4, e5] - wal
+(term-2)
+FOLLOWER-1 []
+F-LEADER [e6,e7] (term-3)
+L-Follower []
+hdfs, zk
+
+
+1. 3rms
+2.
+2 rms
+hdfs editlogs
+
+
+3.
+active will cleanup delta logs
+
+4. poc for fs,
+explore fsImage, editLog
+
+use test cases to validate wal functionality
+------------------------------------------
+TO_ASK:
+Hi morning,  i was reading about zookeeper and it's implementation.
+1. I understand how it's zab replication algo works and there is no inherent leader election algo for rm nodes.
+2. Zk just provides atomic primitives in a tree data structure, maintains snapshot & trx logs of it's cluster.
+3. I experimented with zk primitives in code.
+
+The way i see is -
+1. The rm that's able to create a leader ephemeral node and get quorum votes becomes leader.
+2. The rm followers keep a watch on above ephemeral node.
+3. As soon as rm-primary dies, the ephemeral node is deleted and the followers get this event.
+4. They will check the breadcrumb and kill primary rm process (idk how).
+5. They will perform step-1.
+
+Now, the question is
+1. How is our rm ha working ? Is the rm-secondary watching the nodes in zk and applying the same commands to its local state ?
+2. How can we trigger an event that sends the zk cluster updates by leader to our secondary rm ?
+3. How are we syncing the rm state store with zk cluster ? If possible, figure out any yarn rm design doc.
+4. Does rm maintain state store or it connects directly with zk ?
+
+Kafka has release Kraft to replace zookeeper in their cluster:
+1. https://developer.confluent.io/learn/kraft/
+2. https://cwiki.apache.org/confluence/display/KAFKA/KIP-500%3A+Replace+ZooKeeper+with+a+Self-Managed+Metadata+Quorum

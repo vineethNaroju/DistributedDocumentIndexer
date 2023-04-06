@@ -35,6 +35,7 @@ public class DIStateMachine extends BaseStateMachine {
 
     void print(Object o) { System.out.println(new Date() + "|" + o);}
 
+    // update the metadata & termindex atomically from local disk storage
     private void loadSnapshotFromStorage(SingleFileSnapshotInfo snapshotInfo) throws IOException {
 
         if(snapshotInfo == null) {
@@ -55,11 +56,13 @@ public class DIStateMachine extends BaseStateMachine {
 
         final Map<String, Integer> wordFreqMap = new HashMap<>();
 
+        // expensive operation incase of huge snapshot size.
         for(String line: contents) {
             String[] kv = line.split("_");
             wordFreqMap.put(kv[0], Integer.parseInt(kv[1]));
         }
 
+        // only one metadata object will exist in this usecase.
         synchronized (metadata) {
             metadata.updateFrequencyMapAndTermIndex(wordFreqMap, termIndex);
             updateLastAppliedTermIndex(termIndex.getTerm(), termIndex.getIndex());
@@ -67,17 +70,21 @@ public class DIStateMachine extends BaseStateMachine {
 
     }
 
-    @Override //raftStorage is a file system directory - basically physical storage + configuration
+
+    // RaftStorage is an abstraction over local disk to store ephermal raft server data like
+    // configuration, snapshots, etc and also a file system directory.
+    @Override
     public void initialize(RaftServer raftServer, RaftGroupId raftGroupId, RaftStorage raftStorage) throws IOException {
         super.initialize(raftServer, raftGroupId, raftStorage);
-        smStorage.init(raftStorage);
+        smStorage.init(raftStorage); // loads from local disk into raft server storage abstraction.
         //load the snapshot from storage into state machine
         loadSnapshotFromStorage(smStorage.getLatestSnapshot());
     }
 
     @Override
     public void reinitialize() throws IOException { // sm in pause state comes here
-        loadSnapshotFromStorage(smStorage.getLatestSnapshot()); // reloads latest persisted snapshot with edits
+        loadSnapshotFromStorage(smStorage.getLatestSnapshot());
+        // reloads latest persisted snapshot with edits
     }
 
     @Override
